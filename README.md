@@ -7,6 +7,18 @@ Exporteur de métriques pour Docker Swarm qui expose le statut des mises à jour
 - **Statut des mises à jour** : Monitoring du statut des déploiements et rollbacks des services Docker Swarm
 - **Nombre de replicas** : Suivi du nombre de replicas courants / désirés pour chaque service (`replicated` et `global`)
 
+## 🖥️ Dashboard Grafana
+
+Un dashboard prêt à l'emploi est fourni dans [`grafana/dashboard.json`](./grafana/dashboard.json) : un tableau listant chaque service avec son nombre de replicas courant/désiré, l'écart entre les deux (ligne surlignée en rouge en cas de sous-effectif), le statut de sa dernière mise à jour, et un filtre par nom de service en haut du dashboard.
+
+**Import :**
+1. Dans Grafana : **Dashboards** → **New** → **Import**
+2. **Upload dashboard JSON file** → sélectionner `grafana/dashboard.json`
+3. Choisir votre datasource Prometheus lorsque c'est demandé
+4. **Import**
+
+> **Note :** la datasource Prometheus est paramétrée (`${DS_PROMETHEUS}`) — Grafana vous demandera de la sélectionner au moment de l'import, aucune modification du JSON n'est nécessaire.
+
 ## 📊 Métriques exposées
 
 ### docker_swarm_service_update_status
