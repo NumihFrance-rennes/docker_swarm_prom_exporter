@@ -142,6 +142,25 @@ scrape_configs:
       - targets: ['localhost:8080']
 ```
 
+### Exemple d'alerte
+
+Alerter lorsqu'un service n'a pas le nombre de replicas désiré (le `for: 2m` évite de déclencher pendant un rolling update normal, où l'écart est transitoire) :
+
+```yaml
+groups:
+  - name: docker-swarm
+    rules:
+      - alert: DockerSwarmServiceReplicasMismatch
+        expr: docker_swarm_service_replicas_current < docker_swarm_service_replicas_desired
+        for: 2m
+        labels:
+          severity: critical
+          notification: email
+        annotations:
+          summary: "{{ $labels.service_name }} n'a pas le nombre de replicas désiré"
+          description: "{{ $labels.service_name }} ({{ $labels.mode }}) : {{ $value }} replicas actifs"
+```
+
 ## 🛡️ Sécurité
 
 - L'image utilise un utilisateur non-root
