@@ -5,6 +5,7 @@ Exporteur de métriques pour Docker Swarm qui expose le statut des mises à jour
 ## 🎯 Fonctionnalités
 
 - **Statut des mises à jour** : Monitoring du statut des déploiements et rollbacks des services Docker Swarm
+- **Nombre de replicas** : Suivi du nombre de replicas courants / désirés pour chaque service (`replicated` et `global`)
 
 ## 📊 Métriques exposées
 
@@ -30,6 +31,46 @@ docker_swarm_service_update_status{service_name="web-app",service_id="abc123def4
 docker_swarm_service_update_status{service_name="api-service",service_id="def456ghi789",update_state="updating"} 0.5
 docker_swarm_service_update_status{service_name="worker",service_id="ghi789jkl012",update_state="failed"} 0.0
 ```
+
+### docker_swarm_service_replicas_current
+
+**Type :** Gauge  
+**Description :** Nombre de replicas actuellement en cours d'exécution (tasks en état `running`)  
+**Labels :**
+- `service_name` : Nom du service Docker Swarm
+- `service_id` : ID court du service (12 premiers caractères)
+- `mode` : Mode du service (`replicated` ou `global`)
+
+**Exemple de sortie :**
+```prometheus
+# HELP docker_swarm_service_replicas_current Nombre de replicas actuellement en cours d'exécution (tasks en état running)
+# TYPE docker_swarm_service_replicas_current gauge
+docker_swarm_service_replicas_current{service_name="web-app",service_id="abc123def456",mode="replicated"} 3.0
+docker_swarm_service_replicas_current{service_name="node-agent",service_id="def456ghi789",mode="global"} 5.0
+```
+
+### docker_swarm_service_replicas_desired
+
+**Type :** Gauge  
+**Description :** Nombre de replicas désirés  
+**Labels :**
+- `service_name` : Nom du service Docker Swarm
+- `service_id` : ID court du service (12 premiers caractères)
+- `mode` : Mode du service (`replicated` ou `global`)
+
+**Calcul :**
+- `replicated` : valeur exacte lue depuis `Spec.Mode.Replicated.Replicas`
+- `global` : nombre de tasks non-terminales du service (une par nœud éligible), puisque Docker Swarm ne fixe pas de champ `Replicas` pour ce mode
+
+**Exemple de sortie :**
+```prometheus
+# HELP docker_swarm_service_replicas_desired Nombre de replicas désirés (Spec.Replicas pour replicated, nombre de tasks non-terminales pour global)
+# TYPE docker_swarm_service_replicas_desired gauge
+docker_swarm_service_replicas_desired{service_name="web-app",service_id="abc123def456",mode="replicated"} 3.0
+docker_swarm_service_replicas_desired{service_name="node-agent",service_id="def456ghi789",mode="global"} 5.0
+```
+
+> **Note :** Les services en mode `ReplicatedJob`/`GlobalJob` (tâches one-shot) ne sont pas couverts par ces deux métriques — leurs tasks se terminent normalement en `complete`, la notion de "replicas en cours" ne s'y applique pas.
 
 ## 🚀 Construction et déploiement
 
