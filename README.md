@@ -142,14 +142,15 @@ scrape_configs:
       - targets: ['localhost:8080']
 ```
 
-### Exemple d'alerte
-
-Alerter lorsqu'un service n'a pas le nombre de replicas désiré (le `for: 2m` évite de déclencher pendant un rolling update normal, où l'écart est transitoire) :
+### Exemples d'alertes
 
 ```yaml
 groups:
   - name: docker-swarm
     rules:
+      # Alerte lorsqu'un service n'a pas le nombre de replicas désiré.
+      # Le `for: 2m` évite de déclencher pendant un rolling update normal,
+      # où l'écart est transitoire.
       - alert: DockerSwarmServiceReplicasMismatch
         expr: docker_swarm_service_replicas_current < docker_swarm_service_replicas_desired
         for: 2m
@@ -159,6 +160,24 @@ groups:
         annotations:
           summary: "{{ $labels.service_name }} n'a pas le nombre de replicas désiré"
           description: "{{ $labels.service_name }} ({{ $labels.mode }}) : {{ $value }} replicas actifs"
+
+      # Alerte lorsque la dernière mise à jour d'un service est en échec ou en pause
+      # (docker_swarm_service_update_status < 0.5 ne capture que 'failed'/'paused'/
+      # 'rollback_paused' — une mise à jour en cours ('updating' = 0.5) ne déclenche pas).
+      #
+      # docker_swarm_service_update_status ne porte pas de label `mode` : si vous avez des
+      # services "one-shot" (jobs d'init, de migration, ...) dont le statut de mise à jour
+      # ne reflète pas un vrai déploiement en échec, excluez-les explicitement par nom via
+      # le filtre `service_name!~"..."` ci-dessous (à adapter à vos propres services).
+      - alert: DockerSwarmServiceUpdateFailed
+        expr: docker_swarm_service_update_status{service_name!~"my-oneshot-job-1|my-oneshot-job-2"} < 0.5
+        for: 1m
+        labels:
+          severity: critical
+          notification: email
+        annotations:
+          summary: "Le déploiement du service {{ $labels.service_name }} est en échec"
+          description: "Le déploiement du service {{ $labels.service_name }} est en échec (update_state={{ $labels.update_state }})"
 ```
 
 ## 🛡️ Sécurité
