@@ -4,7 +4,7 @@ Docker Swarm Prometheus Exporter
 
 Ce script expose les métriques des services Docker Swarm au format Prometheus.
 Il collecte les informations sur le statut des services, leur dernière mise à
-jour, leur nombre de replicas (courant / désiré) pour les services
+jour, leur nombre de replicas (courant / cible) pour les services
 replicated/global, et l'avancement des tasks (running/completed/cible) pour
 les services job.
 """
@@ -21,11 +21,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# États de task considérés comme terminaux (la task ne tourne plus et ne
-# tournera plus). Utilisé pour déduire le nombre de replicas désirés des
-# services `global`, qui n'ont pas de champ `Replicas` explicite.
-TERMINAL_TASK_STATES = {'complete', 'failed', 'shutdown', 'rejected', 'orphaned', 'remove'}
 
 # Modes de service "job" (tâches one-shot type `docker service create --mode
 # replicated-job`). Contrairement à Replicated/Global, leurs tasks finissent
@@ -92,9 +87,9 @@ class DockerSwarmExporter:
             registry=self.registry
         )
 
-        self.service_replicas_desired = Gauge(
-            'docker_swarm_service_replicas_desired',
-            'Nombre de replicas désirés (Spec.Replicas pour replicated, nombre de tasks non-terminales pour global)',
+        self.service_replicas_target = Gauge(
+            'docker_swarm_service_replicas_target',
+            'Nombre de replicas cible, une valeur stable calculée par l\'exporteur (Spec.Replicas pour replicated, calculé par Swarm pour global)',
             ['service_name', 'service_id', 'mode'],
             registry=self.registry
         )
@@ -185,27 +180,26 @@ class DockerSwarmExporter:
             if task.get('Status', {}).get('State', '').lower() == 'running'
         )
 
-    def _get_desired_replicas(self, service, mode: str, tasks: list) -> int:
+    def _get_target_replicas(self, service, mode: str, service_status: dict) -> int:
         """
-        Nombre de replicas désirés.
+        Nombre de replicas cible - une valeur stable dans le temps.
 
         Pour un service 'replicated', c'est directement Spec.Replicas (valeur
         exacte, sans le bruit transitoire des tasks en cours d'arrêt pendant
-        un scaling).
+        un scaling) - lecture directe du spec, comme pour ReplicatedJob et
+        TotalCompletions (voir _get_job_target_tasks).
 
-        Pour un service 'global', Swarm ne fixe aucun champ 'Replicas' : le
-        nombre désiré est déduit en comptant les tasks non-terminales (une
-        par nœud éligible), ce qui correspond à ce qu'affiche
-        `docker service ps` sans dupliquer la logique de matching des
-        contraintes de placement du scheduler Swarm.
+        Pour un service 'global', Swarm ne fixe aucun champ 'Replicas' :
+        contrairement à un GlobalJob (qui se termine, et pour qui ce champ
+        n'est donc pas fiable), un service 'global' classique tourne
+        indéfiniment. ServiceStatus.DesiredTasks (calculé par le daemon) y
+        reste donc stable, et est une source plus directe que de recompter
+        nous-mêmes les tasks non-terminales.
         """
         if mode == 'Replicated':
             return service.attrs.get('Spec', {}).get('Mode', {}).get('Replicated', {}).get('Replicas', 0)
 
-        return sum(
-            1 for task in tasks
-            if task.get('Status', {}).get('State', '').lower() not in TERMINAL_TASK_STATES
-        )
+        return service_status.get('DesiredTasks', 0)
 
     def _get_job_target_tasks(self, service, mode: str, tasks: list) -> int:
         """
@@ -228,7 +222,7 @@ class DockerSwarmExporter:
 
         Pour 'GlobalJob', Spec ne porte aucun champ équivalent (une task par
         nœud éligible). ServiceStatus.DesiredTasks semblait un candidat
-        naturel (c'est ce que fait _get_desired_replicas pour 'global'), mais
+        naturel (c'est ce que fait _get_target_replicas pour 'global'), mais
         pour un GlobalJob ce champ ne compte (toujours d'après le code de
         swarmkit) que les tasks dont l'état désiré 'Completed' n'est pas
         encore atteint - une fois le job fini, il n'y a plus rien à compter
@@ -255,7 +249,7 @@ class DockerSwarmExporter:
             # Réinitialisation des gauges avant collecte
             self.service_update_status.clear()
             self.service_replicas_current.clear()
-            self.service_replicas_desired.clear()
+            self.service_replicas_target.clear()
             self.service_job_tasks_running.clear()
             self.service_job_tasks_completed.clear()
             self.service_job_tasks_target.clear()
@@ -287,10 +281,11 @@ class DockerSwarmExporter:
                             update_state=state
                         ).set(update_value)
 
-                    # Nombre de replicas (current / desired)
+                    # Nombre de replicas (current / target)
                     mode = self._get_service_mode(service)
                     if mode in ('Replicated', 'Global'):
                         tasks = tasks_by_service.get(service.id, [])
+                        service_status = service.attrs.get('ServiceStatus') or {}
                         mode_label = mode.lower()
 
                         self.service_replicas_current.labels(
@@ -299,11 +294,11 @@ class DockerSwarmExporter:
                             mode=mode_label
                         ).set(self._get_current_replicas(tasks))
 
-                        self.service_replicas_desired.labels(
+                        self.service_replicas_target.labels(
                             service_name=service_name,
                             service_id=service_id,
                             mode=mode_label
-                        ).set(self._get_desired_replicas(service, mode, tasks))
+                        ).set(self._get_target_replicas(service, mode, service_status))
                     elif mode in JOB_SERVICE_MODES:
                         mode_label = JOB_MODE_LABELS[mode]
                         service_status = service.attrs.get('ServiceStatus') or {}

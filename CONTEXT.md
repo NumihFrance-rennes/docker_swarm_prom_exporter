@@ -14,16 +14,17 @@ _Avoid_: instance, container (une task encapsule un conteneur mais n'y est pas r
 
 **Replica**:
 Une task d'un service dans l'état `running`.
-_Avoid_: instance, replica count (seul, sans préciser current/desired)
+_Avoid_: instance, replica count (seul, sans préciser current/target)
 
 **Current replicas**:
 Le nombre de tasks d'un service en état `running`, à l'instant de la collecte.
 
-**Desired replicas**:
-Le nombre de replicas qu'un service devrait avoir. Pour un service `replicated`, c'est `Spec.Mode.Replicated.Replicas` (valeur exacte et stable). Pour un service `global`, il n'existe pas de champ équivalent — c'est déduit en comptant les tasks non-terminales du service (une par nœud éligible).
+**Target replicas**:
+Le nombre de replicas qu'un service devrait avoir — une valeur stable dans le temps, calculée par l'exporteur.
+_Avoid_: desired replicas — nom délibérément évité pour ce terme, à l'identique de "target tasks (job)".
 
 **Job service**:
-Un service en mode `ReplicatedJob`/`GlobalJob` (tâche one-shot qui se termine après exécution, par opposition à un service `replicated`/`global` qui tourne en continu). Ses tasks finissent normalement en `complete` : la notion de "replicas en cours" (current/desired replicas) ne s'y applique pas — ces services ont leurs propres métriques dédiées (running/completed/target tasks).
+Un service en mode `ReplicatedJob`/`GlobalJob` (tâche one-shot qui se termine après exécution, par opposition à un service `replicated`/`global` qui tourne en continu). Ses tasks finissent normalement en `complete` : la notion de "replicas en cours" (current/target replicas) ne s'y applique pas — ces services ont leurs propres métriques dédiées (running/completed/target tasks).
 _Avoid_: global job, replicated job (utiliser "job service" comme terme générique)
 
 **Running tasks (job)**:

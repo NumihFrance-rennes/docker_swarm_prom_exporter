@@ -5,7 +5,7 @@ Exporteur de métriques pour Docker Swarm qui expose le statut des mises à jour
 ## 🎯 Fonctionnalités
 
 - **Statut des mises à jour** : Monitoring du statut des déploiements et rollbacks des services Docker Swarm
-- **Nombre de replicas** : Suivi du nombre de replicas courants / désirés pour chaque service (`replicated` et `global`)
+- **Nombre de replicas** : Suivi du nombre de replicas courants / cibles pour chaque service (`replicated` et `global`)
 - **Suivi des jobs** : Nombre de tasks en cours / terminées / visées pour les services en mode job (`replicated-job` et `global-job`)
 
 ## 🖥️ Dashboard Grafana
@@ -26,17 +26,17 @@ Un dashboard prêt à l'emploi est fourni dans [`grafana/dashboard.json`](./graf
 groups:
   - name: docker-swarm
     rules:
-      # Alerte lorsqu'un service n'a pas le nombre de replicas désiré.
+      # Alerte lorsqu'un service n'a pas le nombre de replicas cible.
       # Le `for: 2m` évite de déclencher pendant un rolling update normal,
       # où l'écart est transitoire.
       - alert: DockerSwarmServiceReplicasMismatch
-        expr: docker_swarm_service_replicas_current < docker_swarm_service_replicas_desired
+        expr: docker_swarm_service_replicas_current < docker_swarm_service_replicas_target
         for: 2m
         labels:
           severity: critical
           notification: email
         annotations:
-          summary: "{{ $labels.service_name }} n'a pas le nombre de replicas désiré"
+          summary: "{{ $labels.service_name }} n'a pas le nombre de replicas cible"
           description: "{{ $labels.service_name }} ({{ $labels.mode }}) : {{ $value }} replicas actifs"
 
       # Alerte lorsque la dernière mise à jour d'un service est en échec ou en pause
@@ -129,10 +129,10 @@ docker_swarm_service_replicas_current{service_name="web-app",service_id="abc123d
 docker_swarm_service_replicas_current{service_name="node-agent",service_id="def456ghi789",mode="global"} 5.0
 ```
 
-### docker_swarm_service_replicas_desired
+### docker_swarm_service_replicas_target
 
 **Type :** Gauge  
-**Description :** Nombre de replicas désirés  
+**Description :** Nombre de replicas cible — une valeur stable dans le temps, calculée par l'exporteur  
 **Labels :**
 - `service_name` : Nom du service Docker Swarm
 - `service_id` : ID court du service (12 premiers caractères)
@@ -140,14 +140,14 @@ docker_swarm_service_replicas_current{service_name="node-agent",service_id="def4
 
 **Calcul :**
 - `replicated` : valeur exacte lue depuis `Spec.Mode.Replicated.Replicas`
-- `global` : nombre de tasks non-terminales du service (une par nœud éligible), puisque Docker Swarm ne fixe pas de champ `Replicas` pour ce mode
+- `global` : calculé par l'exporteur, puisque Docker Swarm ne fixe pas de champ `Replicas` pour ce mode
 
 **Exemple de sortie :**
 ```prometheus
-# HELP docker_swarm_service_replicas_desired Nombre de replicas désirés (Spec.Replicas pour replicated, nombre de tasks non-terminales pour global)
-# TYPE docker_swarm_service_replicas_desired gauge
-docker_swarm_service_replicas_desired{service_name="web-app",service_id="abc123def456",mode="replicated"} 3.0
-docker_swarm_service_replicas_desired{service_name="node-agent",service_id="def456ghi789",mode="global"} 5.0
+# HELP docker_swarm_service_replicas_target Nombre de replicas cible
+# TYPE docker_swarm_service_replicas_target gauge
+docker_swarm_service_replicas_target{service_name="web-app",service_id="abc123def456",mode="replicated"} 3.0
+docker_swarm_service_replicas_target{service_name="node-agent",service_id="def456ghi789",mode="global"} 5.0
 ```
 
 > **Note :** Les services en mode `ReplicatedJob`/`GlobalJob` (tâches one-shot) ne sont pas couverts par ces deux métriques : une fois un job terminé avec succès, son nombre de tasks *en cours* retombe à 0 alors que le nombre *visé* reste positif, ce qui déclencherait indéfiniment l'alerte `DockerSwarmServiceReplicasMismatch` sur un job pourtant réussi. Ils sont couverts par les métriques dédiées `docker_swarm_service_job_tasks_*` ci-dessous.
