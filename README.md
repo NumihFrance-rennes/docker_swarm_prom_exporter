@@ -39,14 +39,27 @@ groups:
           summary: "{{ $labels.service_name }} n'a pas le nombre de replicas cible"
           description: "{{ $labels.service_name }} ({{ $labels.mode }}) : {{ $value }} replicas actifs"
 
+      # Alerte lorsqu'un service n'a plus aucun replica en cours d'exécution.
+      # Complète DockerSwarmServiceReplicasMismatch : si Swarm épuise
+      # restart_policy.max_attempts sans qu'aucune task n'ait jamais tourné,
+      # DesiredTasks (donc replicas_target) retombe aussi à 0 pour un service
+      # 'global' - l'écart current < target ne se déclenche alors plus, alors
+      # que le service est bel et bien mort (0/0 replicas).
+      - alert: DockerSwarmServiceReplicasZero
+        expr: docker_swarm_service_replicas_current == 0
+        for: 2m
+        labels:
+          severity: critical
+          notification: email
+        annotations:
+          summary: "{{ $labels.service_name }} n'a plus aucun replica en cours d'exécution"
+          description: "{{ $labels.service_name }} ({{ $labels.mode }}) : 0 replica actif depuis au moins 2 minutes"
+
       # Alerte lorsque la dernière mise à jour d'un service est en échec ou en pause
       # (docker_swarm_service_update_status < 0.5 ne capture que 'failed'/'paused'/
       # 'rollback_paused' — une mise à jour en cours ('updating' = 0.5) ne déclenche pas).
-      #
-      # Le filtre par `mode` exclut les services "one-shot" (jobs d'init, de migration, ...)
-      # dont le statut de mise à jour ne reflète pas un vrai déploiement en échec.
       - alert: DockerSwarmServiceUpdateFailed
-        expr: docker_swarm_service_update_status{mode!~"replicated-job|global-job"} < 0.5
+        expr: docker_swarm_service_update_status < 0.5
         for: 1m
         labels:
           severity: critical
