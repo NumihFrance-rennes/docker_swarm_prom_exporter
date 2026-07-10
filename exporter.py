@@ -29,10 +29,13 @@ logger = logging.getLogger(__name__)
 # docker_swarm_service_job_tasks_* dans _setup_metrics / collect_metrics).
 JOB_SERVICE_MODES = {'ReplicatedJob', 'GlobalJob'}
 
-# Labels `mode` exposés pour les services job, au format `docker service
-# create --mode ...` plutôt qu'un `.lower()` mécanique de la clé API, pour
-# rester reconnaissable par les utilisateurs de la CLI Docker.
-JOB_MODE_LABELS = {
+# Labels `mode` exposés pour chaque mode de service, au format `docker
+# service create --mode ...` plutôt qu'un `.lower()` mécanique de la clé
+# API, pour rester reconnaissable par les utilisateurs de la CLI Docker.
+# 'unknown' (voir _get_mode_label) couvre le cas d'un mode non reconnu.
+MODE_LABELS = {
+    'Replicated': 'replicated',
+    'Global': 'global',
     'ReplicatedJob': 'replicated-job',
     'GlobalJob': 'global-job',
 }
@@ -75,7 +78,7 @@ class DockerSwarmExporter:
         self.service_update_status = Gauge(
             'docker_swarm_service_update_status',
             'Statut de la dernière mise à jour (1=completed, 0.5=updating, 0=failed)',
-            ['service_name', 'service_id', 'update_state'],
+            ['service_name', 'service_id', 'update_state', 'mode'],
             registry=self.registry
         )
 
@@ -173,6 +176,12 @@ class DockerSwarmExporter:
                 return mode
         return None
 
+    def _get_mode_label(self, mode: str | None) -> str:
+        """Label `mode` exposé sur les métriques, 'unknown' si non reconnu."""
+        if mode is None:
+            return 'unknown'
+        return MODE_LABELS.get(mode, 'unknown')
+
     def _get_current_replicas(self, tasks: list) -> int:
         """Nombre de tasks en état 'running', quel que soit le mode du service."""
         return sum(
@@ -269,7 +278,11 @@ class DockerSwarmExporter:
                 service_id = service.id[:12]  # Prendre seulement les 12 premiers caractères
 
                 try:
-                    # Statut de mise à jour
+                    mode = self._get_service_mode(service)
+                    mode_label = self._get_mode_label(mode)
+
+                    # Statut de mise à jour (posée pour tous les services,
+                    # y compris mode non reconnu -> mode="unknown")
                     update_status = service.attrs.get('UpdateStatus', {})
                     if update_status:
                         state = update_status.get('State', 'unknown')
@@ -278,15 +291,14 @@ class DockerSwarmExporter:
                         self.service_update_status.labels(
                             service_name=service_name,
                             service_id=service_id,
-                            update_state=state
+                            update_state=state,
+                            mode=mode_label
                         ).set(update_value)
 
                     # Nombre de replicas (current / target)
-                    mode = self._get_service_mode(service)
                     if mode in ('Replicated', 'Global'):
                         tasks = tasks_by_service.get(service.id, [])
                         service_status = service.attrs.get('ServiceStatus') or {}
-                        mode_label = mode.lower()
 
                         self.service_replicas_current.labels(
                             service_name=service_name,
@@ -300,7 +312,6 @@ class DockerSwarmExporter:
                             mode=mode_label
                         ).set(self._get_target_replicas(service, mode, service_status))
                     elif mode in JOB_SERVICE_MODES:
-                        mode_label = JOB_MODE_LABELS[mode]
                         service_status = service.attrs.get('ServiceStatus') or {}
                         tasks = tasks_by_service.get(service.id, [])
 
@@ -323,7 +334,8 @@ class DockerSwarmExporter:
                         ).set(self._get_job_target_tasks(service, mode, tasks))
                     else:
                         logger.warning(
-                            f"Service {service_name} ignoré : mode de service non reconnu ({mode})"
+                            f"Service {service_name} : mode de service non reconnu ({mode}), "
+                            "pas de métriques replicas/job (update_status reste posée avec mode=unknown)"
                         )
 
                 except Exception as e:

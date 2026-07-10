@@ -43,12 +43,10 @@ groups:
       # (docker_swarm_service_update_status < 0.5 ne capture que 'failed'/'paused'/
       # 'rollback_paused' — une mise à jour en cours ('updating' = 0.5) ne déclenche pas).
       #
-      # docker_swarm_service_update_status ne porte pas de label `mode` : si vous avez des
-      # services "one-shot" (jobs d'init, de migration, ...) dont le statut de mise à jour
-      # ne reflète pas un vrai déploiement en échec, excluez-les explicitement par nom via
-      # le filtre `service_name!~"..."` ci-dessous (à adapter à vos propres services).
+      # Le filtre par `mode` exclut les services "one-shot" (jobs d'init, de migration, ...)
+      # dont le statut de mise à jour ne reflète pas un vrai déploiement en échec.
       - alert: DockerSwarmServiceUpdateFailed
-        expr: docker_swarm_service_update_status{service_name!~"my-oneshot-job-1|my-oneshot-job-2"} < 0.5
+        expr: docker_swarm_service_update_status{mode!~"replicated-job|global-job"} < 0.5
         for: 1m
         labels:
           severity: critical
@@ -97,6 +95,7 @@ groups:
 - `service_name` : Nom du service Docker Swarm
 - `service_id` : ID court du service (12 premiers caractères)
 - `update_state` : État de la mise à jour
+- `mode` : Mode du service (`replicated`, `global`, `replicated-job`, `global-job`, ou `unknown` si non reconnu)
 
 **Valeurs :**
 - `1.0` : Mise à jour terminée avec succès (`completed`, `rollback_completed`)
@@ -107,9 +106,9 @@ groups:
 ```prometheus
 # HELP docker_swarm_service_update_status Statut de la dernière mise à jour (1=completed, 0.5=updating, 0=failed)
 # TYPE docker_swarm_service_update_status gauge
-docker_swarm_service_update_status{service_name="web-app",service_id="abc123def456",update_state="completed"} 1.0
-docker_swarm_service_update_status{service_name="api-service",service_id="def456ghi789",update_state="updating"} 0.5
-docker_swarm_service_update_status{service_name="worker",service_id="ghi789jkl012",update_state="failed"} 0.0
+docker_swarm_service_update_status{service_name="web-app",service_id="abc123def456",update_state="completed",mode="replicated"} 1.0
+docker_swarm_service_update_status{service_name="api-service",service_id="def456ghi789",update_state="updating",mode="replicated"} 0.5
+docker_swarm_service_update_status{service_name="worker",service_id="ghi789jkl012",update_state="failed",mode="global"} 0.0
 ```
 
 ### docker_swarm_service_replicas_current
