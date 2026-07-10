@@ -430,6 +430,38 @@
                 "value": true
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "# of replicas",
+              "scope": "series"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": 0
+                    },
+                    {
+                      "color": "transparent",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "applyToRow": true,
+                  "type": "color-background"
+                }
+              }
+            ]
           }
         ]
       },
@@ -624,7 +656,8 @@
                 "service mode",
                 "status de la dernière MEP",
                 "# of replicas",
-                "# difference"
+                "# difference",
+                "# of expected replicas"
               ]
             }
           }
@@ -637,6 +670,17 @@
               {
                 "desc": true,
                 "field": "# difference"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "# of replicas"
               }
             ]
           }
@@ -658,14 +702,14 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "query_result(label_values({__name__=~\"docker_swarm.*\"}, service_name))",
+        "definition": "label_values(service_name)",
         "includeAll": true,
         "multi": true,
         "name": "service",
         "options": [],
         "query": {
-          "qryType": 3,
-          "query": "query_result(label_values({__name__=~\"docker_swarm.*\"}, service_name))",
+          "qryType": 1,
+          "query": "label_values(service_name)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
@@ -694,8 +738,8 @@
     ]
   },
   "timezone": "browser",
-  "title": "Docker swarm - edit",
-  "uid": "ad84bcksadfad",
-  "version": 10,
+  "title": "Docker swarm",
+  "uid": "ad84bck",
+  "version": 6,
   "weekStart": ""
 }
