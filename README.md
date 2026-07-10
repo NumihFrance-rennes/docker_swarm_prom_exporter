@@ -247,6 +247,19 @@ Variables d'environnement disponibles :
 | `EXPORTER_INTERVAL` | `30` | Intervalle de collecte (secondes) |
 | `LOG_LEVEL` | `INFO` | Niveau de log |
 
+## 🧪 Tests
+
+Nécessite un Docker Swarm actif sur la machine (`docker swarm init`).
+
+```bash
+pip install -r requirements.txt -r requirements-test.txt
+pytest -v
+```
+
+Les tests déploient une stack de test dédiée (préfixe `exporter-metrics-test`) et des services job,
+et les suppriment en fin de suite. Voir aussi `.github/workflows/tests.yml`, exécuté automatiquement
+sur chaque push/pull request.
+
 ## 📈 Utilisation
 
 Les métriques sont disponibles sur `http://localhost:8080/metrics`
