@@ -6,6 +6,7 @@ Exporteur de métriques pour Docker Swarm qui expose le statut des mises à jour
 
 - **Statut des mises à jour** : Monitoring du statut des déploiements et rollbacks des services Docker Swarm
 - **Nombre de replicas** : Suivi du nombre de replicas courants / désirés pour chaque service (`replicated` et `global`)
+- **Suivi des jobs** : Nombre de tasks en cours / terminées / visées pour les services en mode job (`replicated-job` et `global-job`)
 
 ## 🖥️ Dashboard Grafana
 
@@ -55,6 +56,35 @@ groups:
         annotations:
           summary: "Le déploiement du service {{ $labels.service_name }} est en échec"
           description: "Le déploiement du service {{ $labels.service_name }} est en échec (update_state={{ $labels.update_state }})"
+
+      # Alerte lorsqu'un service job semble bloqué : il n'a pas encore atteint
+      # son nombre de tasks cible et plus aucune task n'est en cours
+      # d'exécution - un job sain finit par voir completed rejoindre target ;
+      # ajustez le `for` à la durée normale de vos jobs les plus longs.
+      - alert: DockerSwarmServiceJobStalled
+        expr: docker_swarm_service_job_tasks_completed < docker_swarm_service_job_tasks_target and docker_swarm_service_job_tasks_running == 0
+        for: 5m
+        labels:
+          severity: warning
+          notification: email
+        annotations:
+          summary: "Le job {{ $labels.service_name }} semble bloqué"
+          description: "{{ $labels.service_name }} ({{ $labels.mode }}) : {{ $value }} tasks terminées sur la cible, aucune en cours"
+
+      # Alerte lorsqu'un job reste en cours d'exécution anormalement
+      # longtemps (ex. process bloqué, boucle infinie) - un job est censé
+      # se terminer, contrairement à un service replicated/global qui tourne
+      # en continu. Ajustez le `for` à la durée normale de vos jobs les plus
+      # longs pour éviter les faux positifs.
+      - alert: DockerSwarmServiceJobRunningTooLong
+        expr: docker_swarm_service_job_tasks_running > 0
+        for: 1h
+        labels:
+          severity: warning
+          notification: email
+        annotations:
+          summary: "Le job {{ $labels.service_name }} tourne depuis trop longtemps"
+          description: "{{ $labels.service_name }} ({{ $labels.mode }}) : {{ $value }} tasks en cours depuis plus d'une heure"
 ```
 
 ## 📊 Métriques exposées
@@ -120,7 +150,57 @@ docker_swarm_service_replicas_desired{service_name="web-app",service_id="abc123d
 docker_swarm_service_replicas_desired{service_name="node-agent",service_id="def456ghi789",mode="global"} 5.0
 ```
 
-> **Note :** Les services en mode `ReplicatedJob`/`GlobalJob` (tâches one-shot) ne sont pas couverts par ces deux métriques — leurs tasks se terminent normalement en `complete`, la notion de "replicas en cours" ne s'y applique pas.
+> **Note :** Les services en mode `ReplicatedJob`/`GlobalJob` (tâches one-shot) ne sont pas couverts par ces deux métriques : une fois un job terminé avec succès, son nombre de tasks *en cours* retombe à 0 alors que le nombre *visé* reste positif, ce qui déclencherait indéfiniment l'alerte `DockerSwarmServiceReplicasMismatch` sur un job pourtant réussi. Ils sont couverts par les métriques dédiées `docker_swarm_service_job_tasks_*` ci-dessous.
+
+### docker_swarm_service_job_tasks_running
+
+**Type :** Gauge  
+**Description :** Nombre de tasks actuellement en cours d'exécution pour un service job  
+**Labels :**
+- `service_name` : Nom du service Docker Swarm
+- `service_id` : ID court du service (12 premiers caractères)
+- `mode` : Mode du service (`replicated-job` ou `global-job`)
+
+**Exemple de sortie :**
+```prometheus
+# HELP docker_swarm_service_job_tasks_running Nombre de tasks actuellement en cours d'exécution pour un service job
+# TYPE docker_swarm_service_job_tasks_running gauge
+docker_swarm_service_job_tasks_running{service_name="db-migration",service_id="abc123def456",mode="replicated-job"} 1.0
+```
+
+### docker_swarm_service_job_tasks_completed
+
+**Type :** Gauge  
+**Description :** Nombre de tasks terminées avec succès pour un service job  
+**Labels :**
+- `service_name` : Nom du service Docker Swarm
+- `service_id` : ID court du service (12 premiers caractères)
+- `mode` : Mode du service (`replicated-job` ou `global-job`)
+
+**Exemple de sortie :**
+```prometheus
+# HELP docker_swarm_service_job_tasks_completed Nombre de tasks terminées avec succès pour un service job
+# TYPE docker_swarm_service_job_tasks_completed gauge
+docker_swarm_service_job_tasks_completed{service_name="db-migration",service_id="abc123def456",mode="replicated-job"} 2.0
+```
+
+### docker_swarm_service_job_tasks_target
+
+**Type :** Gauge  
+**Description :** Nombre total de tasks devant atteindre l'état `complete` pour que le job soit considéré terminé — une cible stable dans le temps, calculée par l'exporteur  
+**Labels :**
+- `service_name` : Nom du service Docker Swarm
+- `service_id` : ID court du service (12 premiers caractères)
+- `mode` : Mode du service (`replicated-job` ou `global-job`)
+
+**Exemple de sortie :**
+```prometheus
+# HELP docker_swarm_service_job_tasks_target Nombre total de tasks devant atteindre l'état complete pour que le job soit considéré terminé
+# TYPE docker_swarm_service_job_tasks_target gauge
+docker_swarm_service_job_tasks_target{service_name="db-migration",service_id="abc123def456",mode="replicated-job"} 3.0
+```
+
+> **Prérequis :** la collecte des métriques `docker_swarm_service_job_tasks_*` nécessite Docker Engine ≥ 20.10 sur le nœud manager interrogé.
 
 ## 🚀 Construction et déploiement
 

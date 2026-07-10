@@ -4,7 +4,9 @@ Docker Swarm Prometheus Exporter
 
 Ce script expose les métriques des services Docker Swarm au format Prometheus.
 Il collecte les informations sur le statut des services, leur dernière mise à
-jour et leur nombre de replicas (courant / désiré).
+jour, leur nombre de replicas (courant / désiré) pour les services
+replicated/global, et l'avancement des tasks (running/completed/cible) pour
+les services job.
 """
 
 import time
@@ -26,10 +28,19 @@ logger = logging.getLogger(__name__)
 TERMINAL_TASK_STATES = {'complete', 'failed', 'shutdown', 'rejected', 'orphaned', 'remove'}
 
 # Modes de service "job" (tâches one-shot type `docker service create --mode
-# replicated-job`), volontairement hors périmètre des métriques de replicas :
-# leurs tasks finissent normalement en `complete`, donc la notion de
-# "replicas en cours" ne s'y applique pas.
+# replicated-job`). Contrairement à Replicated/Global, leurs tasks finissent
+# normalement en `complete` : la notion de "replicas en cours" ne s'y
+# applique pas, donc ils ont leurs propres métriques dédiées (voir
+# docker_swarm_service_job_tasks_* dans _setup_metrics / collect_metrics).
 JOB_SERVICE_MODES = {'ReplicatedJob', 'GlobalJob'}
+
+# Labels `mode` exposés pour les services job, au format `docker service
+# create --mode ...` plutôt qu'un `.lower()` mécanique de la clé API, pour
+# rester reconnaissable par les utilisateurs de la CLI Docker.
+JOB_MODE_LABELS = {
+    'ReplicatedJob': 'replicated-job',
+    'GlobalJob': 'global-job',
+}
 
 class DockerSwarmExporter:
     """Exporteur de métriques Docker Swarm pour Prometheus"""
@@ -84,6 +95,30 @@ class DockerSwarmExporter:
         self.service_replicas_desired = Gauge(
             'docker_swarm_service_replicas_desired',
             'Nombre de replicas désirés (Spec.Replicas pour replicated, nombre de tasks non-terminales pour global)',
+            ['service_name', 'service_id', 'mode'],
+            registry=self.registry
+        )
+
+        # Métriques pour les services en mode job (ReplicatedJob/GlobalJob)
+        self.service_job_tasks_running = Gauge(
+            'docker_swarm_service_job_tasks_running',
+            "Nombre de tasks actuellement en cours d'exécution pour un service job (ServiceStatus.RunningTasks)",
+            ['service_name', 'service_id', 'mode'],
+            registry=self.registry
+        )
+
+        self.service_job_tasks_completed = Gauge(
+            'docker_swarm_service_job_tasks_completed',
+            'Nombre de tasks terminées avec succès pour un service job (ServiceStatus.CompletedTasks)',
+            ['service_name', 'service_id', 'mode'],
+            registry=self.registry
+        )
+
+        self.service_job_tasks_target = Gauge(
+            'docker_swarm_service_job_tasks_target',
+            "Nombre total de tasks devant atteindre l'état complete pour que le job soit considéré terminé "
+            "(cible stable, à ne pas confondre avec le champ Docker ServiceStatus.DesiredTasks qui compte "
+            "le travail restant et retombe à 0 une fois le job fini)",
             ['service_name', 'service_id', 'mode'],
             registry=self.registry
         )
@@ -172,6 +207,46 @@ class DockerSwarmExporter:
             if task.get('Status', {}).get('State', '').lower() not in TERMINAL_TASK_STATES
         )
 
+    def _get_job_target_tasks(self, service, mode: str, tasks: list) -> int:
+        """
+        Intention : représenter la cible de complétion d'un job service,
+        c'est-à-dire le nombre total de tasks qui doivent atteindre l'état
+        'complete' pour que le job soit considéré terminé. Cette cible est
+        stable dans le temps (elle ne varie pas selon l'avancement du job),
+        contrairement au champ Docker ServiceStatus.DesiredTasks (voir plus
+        bas) qui mesure autre chose.
+
+        Pour 'ReplicatedJob', c'est Spec.Mode.ReplicatedJob.TotalCompletions ;
+        si ce champ est absent, l'API Swarm indique qu'il vaut par défaut
+        MaxConcurrent (lui-même par défaut 1) - on reproduit ce repli ici
+        plutôt que de supposer que le champ est toujours présent en pratique.
+        Note : ServiceStatus.DesiredTasks n'est PAS une alternative valable
+        ici - le code de swarmkit (manager/controlapi/service.go) l'assigne
+        directement à Spec.ReplicatedJob.MaxConcurrent, pas à
+        TotalCompletions ; ce serait donc la limite de concurrence, pas la
+        cible de complétion, si jamais MaxConcurrent < TotalCompletions.
+
+        Pour 'GlobalJob', Spec ne porte aucun champ équivalent (une task par
+        nœud éligible). ServiceStatus.DesiredTasks semblait un candidat
+        naturel (c'est ce que fait _get_desired_replicas pour 'global'), mais
+        pour un GlobalJob ce champ ne compte (toujours d'après le code de
+        swarmkit) que les tasks dont l'état désiré 'Completed' n'est pas
+        encore atteint - une fois le job fini, il n'y a plus rien à compter
+        et il retombe à 0, ce qui ne peut donc pas servir de cible stable. On
+        compte à la place le nombre de nœuds distincts (NodeID) parmi les
+        tasks du service : Swarm assigne exactement une task par nœud
+        éligible pour un GlobalJob, et ce compte reste correct que le job
+        soit en cours ou terminé.
+        """
+        if mode == 'ReplicatedJob':
+            replicated_job_spec = service.attrs.get('Spec', {}).get('Mode', {}).get('ReplicatedJob', {})
+            total_completions = replicated_job_spec.get('TotalCompletions')
+            if total_completions is not None:
+                return total_completions
+            return replicated_job_spec.get('MaxConcurrent', 1)
+
+        return len({task['NodeID'] for task in tasks if task.get('NodeID')})
+
     def collect_metrics(self):
         """Collecte les métriques des services Docker Swarm"""
         try:
@@ -181,9 +256,15 @@ class DockerSwarmExporter:
             self.service_update_status.clear()
             self.service_replicas_current.clear()
             self.service_replicas_desired.clear()
+            self.service_job_tasks_running.clear()
+            self.service_job_tasks_completed.clear()
+            self.service_job_tasks_target.clear()
 
-            # Collecte des informations sur les services
-            services = self.client.services.list()
+            # Collecte des informations sur les services. status=True demande
+            # au daemon de calculer ServiceStatus (RunningTasks/DesiredTasks/
+            # CompletedTasks), nécessaire pour les métriques des services job.
+            # Requiert une API négociée >= 1.41 (Docker Engine >= 20.10).
+            services = self.client.services.list(status=True)
             logger.info(f"Trouvé {len(services)} services")
 
             # Un seul appel API pour toutes les tasks du swarm (voir _group_tasks_by_service)
@@ -223,12 +304,31 @@ class DockerSwarmExporter:
                             service_id=service_id,
                             mode=mode_label
                         ).set(self._get_desired_replicas(service, mode, tasks))
+                    elif mode in JOB_SERVICE_MODES:
+                        mode_label = JOB_MODE_LABELS[mode]
+                        service_status = service.attrs.get('ServiceStatus') or {}
+                        tasks = tasks_by_service.get(service.id, [])
+
+                        self.service_job_tasks_running.labels(
+                            service_name=service_name,
+                            service_id=service_id,
+                            mode=mode_label
+                        ).set(service_status.get('RunningTasks', 0))
+
+                        self.service_job_tasks_completed.labels(
+                            service_name=service_name,
+                            service_id=service_id,
+                            mode=mode_label
+                        ).set(service_status.get('CompletedTasks', 0))
+
+                        self.service_job_tasks_target.labels(
+                            service_name=service_name,
+                            service_id=service_id,
+                            mode=mode_label
+                        ).set(self._get_job_target_tasks(service, mode, tasks))
                     else:
-                        # Modes job (ReplicatedJob/GlobalJob) ou mode inconnu :
-                        # hors périmètre pour les métriques de replicas, voir JOB_SERVICE_MODES.
                         logger.warning(
-                            f"Service {service_name} ignoré pour les métriques de replicas "
-                            f"(mode non supporté: {mode})"
+                            f"Service {service_name} ignoré : mode de service non reconnu ({mode})"
                         )
 
                 except Exception as e:
