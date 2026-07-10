@@ -60,7 +60,7 @@
         "x": 0,
         "y": 0
       },
-      "id": 2,
+      "id": 3,
       "title": "Services",
       "type": "row"
     },
@@ -98,27 +98,303 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "__name__ 1"
+              "options": "# difference",
+              "scope": "series"
             },
             "properties": [
               {
-                "id": "custom.width",
-                "value": 307
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "job 1"
-            },
-            "properties": [
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "transparent",
+                      "value": 0
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
               {
-                "id": "custom.width",
-                "value": 232
+                "id": "custom.cellOptions",
+                "value": {
+                  "applyToRow": true,
+                  "mode": "gradient",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "custom.hideFrom.viz",
+                "value": true
               }
             ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "id": 2,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
           },
+          "editorMode": "builder",
+          "exemplar": false,
+          "expr": "docker_swarm_service_job_tasks_running{service_name=~\"$service\"}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "running"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "builder",
+          "exemplar": false,
+          "expr": "docker_swarm_service_job_tasks_completed{service_name=~\"$service\"}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "completed"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "builder",
+          "exemplar": false,
+          "expr": "docker_swarm_service_job_tasks_target{service_name=~\"$service\"}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "target"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "builder",
+          "exemplar": false,
+          "expr": "docker_swarm_service_update_status{service_name=\"$service\"}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Jobs",
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "service_id",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "Value #A": false,
+              "Value #C": true,
+              "__name__": true,
+              "__name__ 1": true,
+              "__name__ 2": true,
+              "__name__ 3": true,
+              "hostname": true,
+              "hostname 1": true,
+              "hostname 2": true,
+              "hostname 3": true,
+              "instance": true,
+              "instance 1": true,
+              "instance 2": true,
+              "instance 3": true,
+              "job": true,
+              "job 1": true,
+              "job 2": true,
+              "job 3": true,
+              "mode 2": true,
+              "mode 3": true,
+              "real_target": true,
+              "real_target 1": true,
+              "real_target 2": true,
+              "real_target 3": true,
+              "service_name 1": false,
+              "service_name 2": true,
+              "service_name 3": true
+            },
+            "includeByName": {},
+            "indexByName": {
+              "Time 1": 6,
+              "Time 2": 12,
+              "Time 3": 20,
+              "Value #completed": 4,
+              "Value #running": 3,
+              "Value #target": 5,
+              "__name__ 1": 7,
+              "__name__ 2": 13,
+              "__name__ 3": 21,
+              "hostname 1": 8,
+              "hostname 2": 14,
+              "hostname 3": 22,
+              "instance 1": 9,
+              "instance 2": 15,
+              "instance 3": 23,
+              "job 1": 10,
+              "job 2": 16,
+              "job 3": 24,
+              "mode 1": 2,
+              "mode 2": 17,
+              "mode 3": 25,
+              "real_target 1": 11,
+              "real_target 2": 18,
+              "real_target 3": 26,
+              "service_id": 0,
+              "service_name 1": 1,
+              "service_name 2": 19,
+              "service_name 3": 27
+            },
+            "orderByMode": "manual",
+            "renameByName": {
+              "Value #A": "# of replicas",
+              "Value #B": "# of desired replicas",
+              "Value #completed": "# of completed",
+              "Value #running": "# of running",
+              "Value #target": "# of expected",
+              "mode 1": "service mode",
+              "service_id": "id",
+              "service_name 1": "service",
+              "update_state": "status de la dernière MEP"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "_relative_difference",
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "# of completed"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "# of expected"
+                }
+              }
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "# difference",
+            "mode": "unary",
+            "reduce": {
+              "reducer": "sum"
+            },
+            "unary": {
+              "fieldName": "_relative_difference",
+              "operator": "abs"
+            }
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "service",
+                "service mode",
+                "# of running",
+                "# of completed",
+                "# difference",
+                "# of expected"
+              ]
+            }
+          }
+        },
+        {
+          "disabled": true,
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "desc": true,
+                "field": "# difference"
+              }
+            ]
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "footer": {
+              "reducers": []
+            },
+            "inspect": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": [
           {
             "matcher": {
               "id": "byName",
@@ -158,10 +434,10 @@
         ]
       },
       "gridPos": {
-        "h": 31,
+        "h": 23,
         "w": 24,
         "x": 0,
-        "y": 1
+        "y": 8
       },
       "id": 1,
       "options": {
@@ -180,9 +456,10 @@
           "expr": "docker_swarm_service_replicas_current{service_name=~\"$service\"}",
           "format": "table",
           "instant": true,
+          "interval": "",
           "legendFormat": "__auto",
           "range": false,
-          "refId": "A"
+          "refId": "s_current"
         },
         {
           "datasource": {
@@ -191,12 +468,12 @@
           },
           "editorMode": "builder",
           "exemplar": false,
-          "expr": "docker_swarm_service_replicas_desired{service_name=~\"$service\"}",
+          "expr": "docker_swarm_service_replicas_target{service_name=~\"$service\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
           "range": false,
-          "refId": "B"
+          "refId": "s_target"
         },
         {
           "datasource": {
@@ -210,7 +487,7 @@
           "instant": true,
           "legendFormat": "__auto",
           "range": false,
-          "refId": "C"
+          "refId": "su_update_status"
         }
       ],
       "title": "Service list",
@@ -231,6 +508,7 @@
               "Time 3": true,
               "Value #A": false,
               "Value #C": true,
+              "Value #su_update_status": true,
               "__name__ 1": true,
               "__name__ 2": true,
               "__name__ 3": true,
@@ -243,7 +521,9 @@
               "job 1": true,
               "job 2": true,
               "job 3": true,
+              "mode 1": false,
               "mode 2": true,
+              "mode 3": true,
               "real_target 1": true,
               "real_target 2": true,
               "real_target 3": true,
@@ -255,9 +535,9 @@
               "Time 1": 6,
               "Time 2": 12,
               "Time 3": 20,
-              "Value #A": 3,
-              "Value #B": 4,
-              "Value #C": 27,
+              "Value #s_current": 4,
+              "Value #s_target": 5,
+              "Value #su_update_status": 28,
               "__name__ 1": 7,
               "__name__ 2": 13,
               "__name__ 3": 21,
@@ -272,6 +552,7 @@
               "job 3": 24,
               "mode 1": 2,
               "mode 2": 17,
+              "mode 3": 27,
               "real_target 1": 11,
               "real_target 2": 18,
               "real_target 3": 25,
@@ -279,12 +560,15 @@
               "service_name 1": 1,
               "service_name 2": 19,
               "service_name 3": 26,
-              "update_state": 5
+              "update_state": 3
             },
             "orderByMode": "manual",
             "renameByName": {
               "Value #A": "# of replicas",
               "Value #B": "# of desired replicas",
+              "Value #s_current": "# of replicas",
+              "Value #s_target": "# of expected replicas",
+              "Value #su_update_status": "",
               "mode 1": "service mode",
               "service_name 1": "service",
               "update_state": "status de la dernière MEP"
@@ -299,7 +583,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "# of desired replicas"
+                  "options": "# of expected replicas"
                 }
               },
               "operator": "-",
@@ -338,10 +622,9 @@
                 "service_id",
                 "service",
                 "service mode",
+                "status de la dernière MEP",
                 "# of replicas",
-                "# of desired replicas",
-                "# difference",
-                "status de la dernière MEP"
+                "# difference"
               ]
             }
           }
@@ -363,7 +646,7 @@
     }
   ],
   "preload": false,
-  "refresh": "",
+  "refresh": "5s",
   "schemaVersion": 42,
   "tags": [],
   "templating": {
@@ -375,14 +658,14 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(docker_swarm_service_replicas_desired,service_name)",
+        "definition": "query_result(label_values({__name__=~\"docker_swarm.*\"}, service_name))",
         "includeAll": true,
         "multi": true,
         "name": "service",
         "options": [],
         "query": {
-          "qryType": 1,
-          "query": "label_values(docker_swarm_service_replicas_desired,service_name)",
+          "qryType": 3,
+          "query": "query_result(label_values({__name__=~\"docker_swarm.*\"}, service_name))",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
@@ -393,7 +676,7 @@
     ]
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-5m",
     "to": "now"
   },
   "timepicker": {
@@ -411,8 +694,8 @@
     ]
   },
   "timezone": "browser",
-  "title": "Docker swarm",
-  "uid": "ad84bck",
-  "version": 2,
+  "title": "Docker swarm - edit",
+  "uid": "ad84bcksadfad",
+  "version": 10,
   "weekStart": ""
 }
